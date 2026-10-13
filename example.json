@@ -1,0 +1,62 @@
+{
+  "settings": { "early_before": "09:00", "late_after": "18:00" },
+  "weights": { "day": 100, "early": 30, "gap_hour": 10, "late": 15, "optional_missing": 40 },
+  "courses": [
+    {
+      "name": "Calculus lecture",
+      "mandatory": true,
+      "options": [
+        { "name": "EA1", "meetings": [{ "day": "Mon", "start": "08:00", "end": "10:00" }] }
+      ]
+    },
+    {
+      "name": "Calculus practice",
+      "mandatory": true,
+      "options": [
+        { "name": "GY1", "meetings": [{ "day": "Mon", "start": "10:00", "end": "12:00" }] },
+        { "name": "GY2", "meetings": [{ "day": "Tue", "start": "08:00", "end": "10:00" }] },
+        { "name": "GY3", "meetings": [{ "day": "Wed", "start": "14:00", "end": "16:00" }] }
+      ]
+    },
+    {
+      "name": "Programming",
+      "mandatory": true,
+      "options": [
+        { "name": "G1", "meetings": [
+          { "day": "Tue", "start": "10:00", "end": "12:00" },
+          { "day": "Thu", "start": "10:00", "end": "12:00" } ] },
+        { "name": "G2", "meetings": [
+          { "day": "Mon", "start": "12:00", "end": "14:00" },
+          { "day": "Wed", "start": "12:00", "end": "14:00" } ] },
+        { "name": "G3", "meetings": [
+          { "day": "Mon", "start": "16:00", "end": "18:00" },
+          { "day": "Wed", "start": "16:00", "end": "18:00" } ] }
+      ]
+    },
+    {
+      "name": "Discrete Math",
+      "mandatory": true,
+      "options": [
+        { "name": "D1", "meetings": [{ "day": "Wed", "start": "08:00", "end": "10:00" }] },
+        { "name": "D2", "meetings": [{ "day": "Wed", "start": "10:00", "end": "12:00" }] },
+        { "name": "D3", "meetings": [{ "day": "Fri", "start": "12:00", "end": "14:00" }] }
+      ]
+    },
+    {
+      "name": "Physics",
+      "mandatory": true,
+      "options": [
+        { "name": "P1", "meetings": [{ "day": "Mon", "start": "14:00", "end": "16:00" }] },
+        { "name": "P2", "meetings": [{ "day": "Thu", "start": "08:00", "end": "10:00" }] }
+      ]
+    },
+    {
+      "name": "PE",
+      "mandatory": false,
+      "options": [
+        { "name": "Swimming", "meetings": [{ "day": "Wed", "start": "18:00", "end": "19:30" }] },
+        { "name": "Football", "meetings": [{ "day": "Fri", "start": "16:00", "end": "17:30" }] }
+      ]
+    }
+  ]
+}
