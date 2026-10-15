@@ -27,9 +27,19 @@ DEFAULT_WEIGHTS = {
 DEFAULT_SETTINGS = {"early_before": "09:00", "late_after": "18:00"}
 
 
+class InputError(ValueError):
+    """Raised when the input JSON is malformed; the message says where."""
+
+
 def to_minutes(hhmm: str) -> int:
-    h, m = hhmm.split(":")
-    return int(h) * 60 + int(m)
+    try:
+        h, m = hhmm.split(":")
+        hours, minutes = int(h), int(m)
+    except (AttributeError, ValueError):
+        raise InputError(f"invalid time {hhmm!r}, expected HH:MM") from None
+    if not (0 <= hours <= 24 and 0 <= minutes < 60) or hours * 60 + minutes > 24 * 60:
+        raise InputError(f"invalid time {hhmm!r}, out of range")
+    return hours * 60 + minutes
 
 
 @dataclass(frozen=True)
@@ -59,30 +69,83 @@ class Course:
     options: list[Option]
 
 
-def load(path: str) -> tuple[list[Course], dict, dict]:
-    with open(path) as f:
-        data = json.load(f)
+def parse_meeting(m: dict, where: str) -> Meeting:
+    for key in ("day", "start", "end"):
+        if key not in m:
+            raise InputError(f"{where}: missing {key!r}")
+    if m["day"] not in DAYS:
+        raise InputError(f"{where}: unknown day {m['day']!r}, use one of {', '.join(DAYS)}")
+    try:
+        start, end = to_minutes(m["start"]), to_minutes(m["end"])
+    except InputError as e:
+        raise InputError(f"{where}: {e}") from None
+    if start >= end:
+        raise InputError(f"{where}: start {m['start']} is not before end {m['end']}")
+    return Meeting(DAYS.index(m["day"]), start, end)
+
+
+def parse(data: dict) -> tuple[list[Course], dict, dict]:
+    """Build the model from already-decoded JSON, validating it on the way."""
+    if not isinstance(data.get("courses"), list) or not data["courses"]:
+        raise InputError("'courses' must be a non-empty list")
     courses = []
-    for c in data["courses"]:
+    seen: set[str] = set()
+    for ci, c in enumerate(data["courses"]):
+        name = c.get("name")
+        if not name:
+            raise InputError(f"course #{ci + 1}: missing 'name'")
+        if name in seen:
+            raise InputError(f"course {name!r}: duplicate name")
+        seen.add(name)
+        if not c.get("options"):
+            raise InputError(f"course {name!r}: needs at least one option")
         options = []
-        for o in c["options"]:
+        for oi, o in enumerate(c["options"]):
+            oname = o.get("name") or f"#{oi + 1}"
+            if not o.get("meetings"):
+                raise InputError(f"course {name!r}, option {oname!r}: needs at least one meeting")
             meetings = tuple(
-                Meeting(DAYS.index(m["day"]), to_minutes(m["start"]), to_minutes(m["end"]))
-                for m in o["meetings"]
+                parse_meeting(m, f"course {name!r}, option {oname!r}, meeting #{mi + 1}")
+                for mi, m in enumerate(o["meetings"])
             )
-            options.append(Option(c["name"], o["name"], meetings))
-        courses.append(Course(c["name"], c.get("mandatory", True), options))
+            for a, b in itertools.combinations(meetings, 2):
+                if a.overlaps(b):
+                    raise InputError(f"course {name!r}, option {oname!r}: its own meetings overlap ({a} / {b})")
+            options.append(Option(name, oname, meetings))
+        courses.append(Course(name, c.get("mandatory", True), options))
+
     weights = {**DEFAULT_WEIGHTS, **data.get("weights", {})}
+    unknown = set(weights) - set(DEFAULT_WEIGHTS)
+    if unknown:
+        raise InputError(f"unknown weight(s): {', '.join(sorted(unknown))}")
     settings = {**DEFAULT_SETTINGS, **data.get("settings", {})}
+    unknown = set(settings) - set(DEFAULT_SETTINGS)
+    if unknown:
+        raise InputError(f"unknown setting(s): {', '.join(sorted(unknown))}")
+    for key, value in settings.items():
+        try:
+            to_minutes(value)
+        except InputError as e:
+            raise InputError(f"setting {key!r}: {e}") from None
     return courses, weights, settings
 
 
+def load(path: str) -> tuple[list[Course], dict, dict]:
+    with open(path, encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise InputError(f"{path}: not valid JSON ({e})") from None
+    return parse(data)
+
+
 class Scorer:
-    def __init__(self, weights: dict, settings: dict, n_optional: int):
+    def __init__(self, weights: dict, settings: dict, courses: list[Course]):
         self.w = weights
         self.early_before = to_minutes(settings["early_before"])
         self.late_after = to_minutes(settings["late_after"])
-        self.n_optional = n_optional
+        self.optional_names = {c.name for c in courses if not c.mandatory}
+        self.n_optional = len(self.optional_names)
 
     def breakdown(self, chosen: list[Option]) -> dict:
         meetings = [m for o in chosen for m in o.meetings]
@@ -131,7 +194,6 @@ class Scorer:
 def solve(courses: list[Course], scorer: Scorer, top: int) -> list[tuple[float, list[Option]]]:
     # Most constrained first: fewer options -> earlier failures -> faster search.
     order = sorted(courses, key=lambda c: (not c.mandatory, len(c.options)))
-    scorer.optional_names = {c.name for c in courses if not c.mandatory}
     optional_after = [sum(1 for c in order[i:] if not c.mandatory) for i in range(len(order) + 1)]
 
     best: list[tuple[float, int, list[Option]]] = []  # max-heap via negated score
@@ -182,8 +244,11 @@ def main() -> None:
     parser.add_argument("--top", type=int, default=3, help="how many schedules to show")
     args = parser.parse_args()
 
-    courses, weights, settings = load(args.file)
-    scorer = Scorer(weights, settings, sum(1 for c in courses if not c.mandatory))
+    try:
+        courses, weights, settings = load(args.file)
+    except (OSError, InputError) as e:
+        parser.exit(1, f"error: {e}\n")
+    scorer = Scorer(weights, settings, courses)
     results = solve(courses, scorer, args.top)
     if not results:
         print("No valid schedule: the mandatory courses always clash.")
